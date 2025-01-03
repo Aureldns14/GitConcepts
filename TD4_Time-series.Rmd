@@ -1,0 +1,241 @@
+---
+title: "Time_Series_TD4"
+output: HTML_document
+date: "2025-01-03"
+---
+```{r}
+install.packages("tinytex")
+tinytex::install_tinytex()
+```
+```{r}
+getwd()
+```
+
+##**Exercise 4 : Estimating an ARIMA(p,d,q)**
+#Q1
+```{r}
+#import the data
+install.packages("tidyquant")
+library(tidyquant)
+stock_prices <- tq_get("JNJ", get = "stock.prices", from = "1997-01-01") %>%
+  tq_transmute(mutate_fun = to.period, period = "months")
+
+#test stationarity using Dickey-Fuller test
+install.packages("tseries")
+library(tseries)
+adf.test(stock_prices$adjusted) #test on adjusted prices
+
+#we apply differenciation if it is not stationary
+differenced_prices <- diff(stock_prices$adjusted)
+adf.test(differenced_prices) #check stationarity on differenced series
+```
+#We observe that the time series is not stationary. In fact, the p-value (0.851) is higher than 0,05, so it requires differencing. After applying a first difference, the series becomes stationary, with a low p-value (0.01) confirming the absence of a unit root.
+
+#Q2
+```{r}
+#ACF and PACF for differenced data
+acf(differenced_prices, main = "ACF for Differenced Data")
+pacf(differenced_prices, main = "PACF for Differenced Data")
+```
+#In the ACF, there is a rapid decay after lag 1, which indicates a moving average q=1. In the PACF, we notice the only truly significant autocorrelation is at lag 2 and this suggests a p=2. Finally, we had to apply a differentiation to our series in order to make it stationary, therefore d=1. We therefore have an ARIMA model (p=1,d=1,q=1). 
+
+#Q3
+```{r}
+#we fit the ARIMA model with parameters we have found
+arima_model <- arima(stock_prices$adjusted, order = c(2, 1, 1)) 
+
+#graph comparing observed and fitted values
+fitted_values <- fitted(arima_model)
+plot(stock_prices$adjusted, type = "l", col = "blue", main = "Observed vs Fitted Values",
+     xlab = "Date", ylab = "Prices")
+lines(fitted_values, col = "green")
+legend("topright", legend = c("Observed", "Fitted"), col = c("blue", "green"), lty = 1)
+```
+#We notice that the values adjusted with our ARIMA(2,1,1) are almost the same as those observed. The adjustment therefore seems to be good. To be sure that my model is well adjusted, I now need to carry out a study of the residuals.
+
+#Q4
+```{r}
+#calculation of residuals
+model_residuals <- residuals(arima_model)
+
+#histogram of residuals with a density curve
+hist(model_residuals, main = "Residuals Histogram", xlab = "Residuals", 
+     ylab = "Density", col = "lightgreen", freq = FALSE,ylim = c(0, 0.20))
+lines(density(model_residuals))
+
+#vertical line to show the mean
+abline(v = mean(model_residuals), lwd = 2, lty = 2)
+
+#ACF to check autocorrelation
+acf(model_residuals, main = "ACF of Residuals")
+```
+
+# We first notice in the histogram of the residuals that the mean of the residuals is approximately equal to zero. Additionally, they approximately follow a normal distribution as shown by the density curve. The assumption of normality of the residuals is therefore approximately respected.
+# Then, in the ACF, we notice that at all lags, the autocorrelation is not significant. The property of absence of autocorrelations is therefore well respected.
+
+# We have verified that our model is well specified.
+
+
+#Q5
+```{r}
+#generate forecast
+forecast_results <- forecast(arima_model, h = 3)
+
+#plot the forecast with specific x and y limits
+plot(forecast_results, main = "3-Month Forecast zoomed", xlab = "Time", ylab = "Values",
+     xlim = c(300, 350), #limit x-axis from 300 to 350
+     ylim = c(125, 200)) #limit y-axis from 125 to 150
+
+#highlight forecast points
+points((length(arima_model$x) + 1):(length(arima_model$x) + 3), forecast_results$mean, col = "blue", pch = 19)
+
+#confidence levels of the forecast points
+forecast_results
+```
+#We obtain forecasts that follow the last observed trend. We notice that the confidence interval increases with time, which is normal to observe. We could further optimize our model so that this interval is reduced but it already looks good.
+
+##**Exercise 5 : Unit root test another one**
+#Q1
+```{r}
+#installation of the urca package
+install.packages("urca")
+library(urca)
+
+#set seed at 123
+set.seed(123)
+#generate a random walk
+random_series <- cumsum(rnorm(100))
+#apply the zivot-andrews test
+zivot_andrews_test <- ur.za(random_series, model = "both", lag = 5)
+
+#results
+summary(zivot_andrews_test)
+
+```
+#The Zivot-Andrews test indicates the potential presence of a break point at position 77 with a statistic of -3.2797. The latter is greater in absolute value than the critical values at all levels so we cannot reject H0. H0 being the hypothesis that the series has a unit root with one or more breaks.
+
+#Q2
+```{r}
+set.seed(123)
+#pure random walk
+rw1 <- cumsum(rnorm(100))
+#random walk with a break in level
+rw2 <- c(random_walk1[1:50], random_walk1[51:100] + 5)
+#random walk with a break in both level and trend
+rw3 <- c(random_walk1[1:50], random_walk1[51:100] + 5 + seq(0, 50, length.out = 50))
+
+#graph of the 3 random walks
+plot(rw1, type = "l", col = "blue", main = "Random Walks", ylab = "Value", xlab = "Time", ylim = c(-4, 20))
+lines(rw2, col = "pink")
+lines(rw3, col = "green")
+legend("topleft", legend = c("Pure", "With 1 Break in Level", "With 1 Break in Level and Trend"),
+       col = c("blue", "pink", "green"), lty = 1)
+
+```
+#Via this comparative graph, we notice the impact of structural breaks on the trajectory of the series. Indeed, we notice that the pink curve suddenly changes level from t=50. It keeps the same trajectory as the pure random walk but with higher values. In the case of the green curve, we also notice an increase in the values from t=50 but this time the trend is no longer the same as that of the pure random walk.
+
+#Q3
+```{r}
+#zivot-andrews test 
+za_test1 <- ur.za(rw1, model = "both", lag = 5)
+za_test2 <- ur.za(rw2, model = "both", lag = 5)
+za_test3 <- ur.za(rw3, model = "both", lag = 5)
+
+#reunit the results
+results <- data.frame(
+  series = c("random walk 1", "random walk 2", "random walk 3"),
+  test_statistic = c(za_test1@teststat, za_test2@teststat, za_test3@teststat),
+  break_point = c(za_test1@bpoint, za_test2@bpoint, za_test3@bpoint),
+  critical_value_5_percent = c(za_test1@cval["5pct"], za_test2@cval["5pct"], za_test3@cval["5pct"])
+)
+
+#display results
+print(results)
+
+```
+#The test results show that break points are detected at positions 77, 50, and 39 for each random walk. However, the test values do not exceed the critical values so once again we cannot reject H0.
+
+#Q4
+```{r}
+#zivot-andrews test on the filtered jnj series
+za_test_jnj <- ur.za(stock_prices$adjusted, model = "both", lag = 5)
+
+#results
+summary(za_test_jnj)
+```
+#According to the Zivot-Andrews test, there is a potential break point at position 141. The test statistic is -3.244 and is therefore greater than the critical values ​​so we cannot reject H0.
+
+#We deduce that the series is surely non-stationary (H1).
+
+##**Exercise 6 : Modeling the business cycle**
+```{r}
+install.packages("tidyverse")
+install.packages("quantmod")
+install.packages("forecast")
+library(tidyverse)
+library(quantmod)
+library(forecast)
+
+#data from FRED 
+getSymbols(c("AAA", "BAA"), src = "FRED")
+
+#credit spread
+credit_spread <- BAA - AAA
+
+#convertion into a time series
+credit_spread_ts <- ts(credit_spread, start = c(1990, 1), frequency = 12) 
+
+#graph of the time series
+plot(credit_spread_ts, main = "Monthly Credit Spread", ylab = "Spread (Baa - Aaa)", xlab = "Year")
+```
+```{r}
+#seasonal decomposition of the time series
+decomposed <- decompose(credit_spread_ts)
+plot(decomposed)
+```
+#Breaking down the series gives us key information on its characteristics. We notice via the trend component that the average of the series is not constant and therefore that it is not stationary. We also notice in the random component that the variance is not constant, which reinforces non-stationarity. In addition, the seasonal component tells us that our series is seasonal because it has regular cycles.
+
+```{r}
+#adf test to check the stationarity
+install.packages("tseries")
+library(tseries)
+adf_test <- adf.test(credit_spread_ts)
+print(adf_test)
+
+#if it is non-stationary,we have to apply differencing
+if (adf_test$p.value > 0.05) {
+  credit_spread_diff <- diff(credit_spread_ts)
+  adf_test_diff <- adf.test(credit_spread_diff)
+  print(adf_test_diff)
+}
+#auto.arima determine the best coefficients p,d,q to use
+arima_model <- auto.arima(credit_spread_ts)
+summary(arima_model)
+
+#graph of the fitted model
+checkresiduals(arima_model)
+
+#ACF
+acf(residuals, main = "ACF of Residuals")
+```
+#We notice in the result of auto ARIMA that ARIMA(2,1,2) is the most suitable for modeling our series. The d=1, which is consistent because we observed previously that our series is not stationary and therefore we must apply at least one differentiation to it in order to make it stationary.
+
+#Then, via the following 3 graphs, we seek to verify that our ARIMA(2,1,2) model is well specified. First of all, we observe in the graph and in the histogram that the average of the residuals is zero. Furthermore, in the histogram, we notice that they have a normal distribution. Thus, the normality property of the residuals is well satisfied. Finally, we notice in the ACF that the autocorrelations are almost all insignificant. Thus, we can affirm that the residuals of our model contain almost no autocorrelations.
+
+#With all this information, we can affirm that our ARIMA(2,1,2) modem is well specified.
+
+```{r}
+#forecast for the next 3 months
+forecast_results <- forecast(arima_model, h = 3)
+
+#plot the forecast
+plot(forecast_results, main = "3-Month Forecast zoomed", xlab = "Time", ylab = "Values",
+     xlim = c(2090, 2098), #limit x-axis from 300 to 350
+     ylim = c(0, 2)) #limit y-axis from 125 to 150
+print(forecast_results)
+
+```
+#Our prediction suggests that the credit spread will increase in the future. We must remain vigilant because we have fairly wide confidence intervals, especially when we move forward in time.
+
+#END
+
